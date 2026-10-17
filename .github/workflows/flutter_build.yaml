@@ -133,7 +133,7 @@ jobs:
           if [ "${{ inputs.build_type }}" = "debug" ]; then
             flutter build apk --debug
           else
-            flutter build apk --release
+            flutter build apk --release --split-per-abi
           fi
 
       - name: Bungkus APK jadi ZIP
