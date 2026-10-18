@@ -87,45 +87,9 @@ jobs:
             exit 1
           fi
 
-      # Project tanpa folder android/ (mis. NEXVORA) dibuatkan otomatis.
-      # Project yang sudah punya android/ tidak disentuh sama sekali.
-      - name: Buat folder android (kalau belum ada)
-        working-directory: project
-        run: |
-          if [ -f android/app/src/main/AndroidManifest.xml ]; then
-            echo "android/ sudah ada, dilewati."
-          elif [ -f tools/make_android.sh ]; then
-            bash tools/make_android.sh
-          else
-            NAME=$(grep -m1 '^name:' pubspec.yaml | awk '{print $2}' | tr -d '\r')
-            TMP=$(mktemp -d)
-            flutter create --platforms android --project-name "${NAME:-app}" "$TMP/nx"
-            rm -rf android
-            cp -r "$TMP/nx/android" android
-          fi
-
       - name: Flutter pub get
         working-directory: project
         run: flutter pub get
-
-      - name: Matikan R8/minify di release
-        working-directory: project
-        run: |
-          python3 - <<'PYEOF'
-          import glob, re
-          for f in glob.glob("android/app/build.gradle*"):
-              s = open(f, encoding="utf-8").read()
-              if "isMinifyEnabled" in s or "minifyEnabled" in s:
-                  continue
-              if f.endswith(".kts"):
-                  block = "\n            isMinifyEnabled = false\n            isShrinkResources = false"
-              else:
-                  block = "\n            minifyEnabled false\n            shrinkResources false"
-              s2 = re.sub(r"(buildTypes\s*\{\s*release\s*\{)", lambda m: m.group(1) + block, s, count=1)
-              if s2 != s:
-                  open(f, "w", encoding="utf-8").write(s2)
-                  print("minify dimatikan di", f)
-          PYEOF
 
       - name: Build APK
         working-directory: project
@@ -133,32 +97,14 @@ jobs:
           if [ "${{ inputs.build_type }}" = "debug" ]; then
             flutter build apk --debug
           else
-            flutter build apk --release --split-per-abi
+            flutter build apk --release
           fi
 
-      - name: Bungkus APK jadi ZIP
-        if: always()
-        env:
-          TAG: ${{ inputs.tag }}
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          APKS=(project/build/app/outputs/flutter-apk/*.apk)
-          if [ "${#APKS[@]}" -eq 0 ]; then
-            echo "::warning::APK tidak ditemukan, tidak ada ZIP yang dibuat."
-            exit 0
-          fi
-          SAFE_TAG="$(echo "$TAG" | tr -c 'A-Za-z0-9._-' '_')"
-          mkdir -p out
-          zip -j "out/apk-${SAFE_TAG}.zip" "${APKS[@]}"
-          ls -la out
-
-      - name: Upload ZIP sebagai artifact
+      - name: Upload APK sebagai artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          # Nama HARUS mengandung kata "apk" atau "build" - dibaca oleh bot
           name: apk-${{ inputs.tag }}
-          path: out/*.zip
+          path: project/build/app/outputs/flutter-apk/*.apk
           if-no-files-found: warn
           retention-days: 1
